@@ -7,12 +7,13 @@ declare global {
   }
 }
 
-type HTMLNode = VNode | TextNode
+type ResolvedNode<P = object> = VNode<P> | TextNode
+type HTMLNode<P = object> = ResolvedNode<P> | ((state: any) => HTMLNode<P>)
 
 export interface VNode<P = object> {
   type: string
   props: P
-  children: HTMLNode[]
+  children: ResolvedNode[]
 }
 
 export type TextNode = string & {
@@ -20,19 +21,23 @@ export type TextNode = string & {
 }
 
 export interface Component<P = object> {
-  (props: P, children: HTMLNode[]): VNode<P>
+  (props: P, children: ResolvedNode[]): VNode<P>
 }
 
-function isTextNode(node: HTMLNode): node is TextNode {
+function isTextNode(node: ResolvedNode): node is TextNode {
   return !node.type
 }
 
-export function h<P>(type: string | Component<P>, props?: P, ...children: HTMLNode[]): VNode {
+export function h<P>(type: string | Component<P>, props?: P, ...children: ResolvedNode[]): HTMLNode {
   return typeof type === 'function' ? type(props || {} as P, children) : {
     type,
     props: props || {},
     children: children.filter((child) => child != null && child !== ''),
   }
+}
+
+function resolveNode(node: HTMLNode, store: Store<any>): ResolvedNode {
+  return typeof node === 'function' ? resolveNode(node(store.state), store) : node
 }
 
 function setBooleanProp($target: Element, name: string, value: boolean) {
@@ -119,39 +124,42 @@ function updateProps($target: Element, dispatch: Dispatch, newProps: any, oldPro
   })
 }
 
-function createElement(node: HTMLNode, dispatch: Dispatch) {
+function createElement(node: ResolvedNode, store: Store<any>) {
   if (isTextNode(node)) {
     return document.createTextNode(node)
   }
 
   const $el = document.createElement(node.type)
-  updateProps($el, dispatch, node.props)
+  updateProps($el, store.dispatch, node.props)
 
-  node.children.forEach((child) => {
-    $el.appendChild(createElement(child, dispatch))
-  })
+  for (let i = 0, len = node.children.length; i < len; ++i) {
+    $el.appendChild(createElement(
+      node.children[i] = resolveNode(node.children[i], store),
+      store
+    ))
+  }
 
   return $el
 }
 
-function changed(node1: HTMLNode, node2: HTMLNode) {
+function changed(node1: ResolvedNode, node2: ResolvedNode) {
   return typeof node1 !== typeof node2 ||
     isTextNode(node1) && node1 !== node2 ||
     node1.type !== node2.type
 }
 
-function updateElement($parent: Element, dispatch: Dispatch, newNode: HTMLNode, oldNode?: HTMLNode, index = 0) {
+function updateElement($parent: Element, store: Store<any>, newNode: ResolvedNode, oldNode?: ResolvedNode, index = 0) {
   if (oldNode == null) {
-    $parent.appendChild(createElement(newNode, dispatch))
+    $parent.appendChild(createElement(newNode, store))
   }
   else if (newNode == null) {
     $parent.removeChild($parent.childNodes[index])
   }
   else if (changed(newNode, oldNode)) {
-    $parent.replaceChild(createElement(newNode, dispatch), $parent.childNodes[index])
+    $parent.replaceChild(createElement(newNode, store), $parent.childNodes[index])
   }
   else if (!isTextNode(newNode)) {
-    updateProps($parent.childNodes[index] as Element, dispatch, newNode.props, oldNode.props)
+    updateProps($parent.childNodes[index] as Element, store.dispatch, newNode.props, oldNode.props)
 
     const newLength = newNode.children.length
     const oldLength = oldNode.children!.length
@@ -159,8 +167,8 @@ function updateElement($parent: Element, dispatch: Dispatch, newNode: HTMLNode, 
     for (let i = 0; i < newLength || i < oldLength; i++) {
       updateElement(
         $parent.childNodes[index] as Element,
-        dispatch,
-        newNode.children[i],
+        store,
+        newNode.children[i] = resolveNode(newNode.children[i], store),
         oldNode.children![i],
         i
       )
@@ -170,20 +178,26 @@ function updateElement($parent: Element, dispatch: Dispatch, newNode: HTMLNode, 
 
 type Dispatch = (event: Event) => void
 
-export function app<S extends object>(state: S, view: (state: S) => VNode<S>, container: Element) {
-  let currentState = state
-  let currentNode = h(view, state)
+interface Store<S> {
+  dispatch: Dispatch
+  state: S
+}
 
-  const dispatch: Dispatch = (event: Event) => {
-    currentState = {
-      ...currentState as any,
-      ...(event.currentTarget as ElementWithEvent).events![event.type](event)
+export function app<S extends object>(state: S, view: () => VNode<S>, container: Element) {
+  let store: Store<S> = {
+    state,
+    dispatch: (event: Event) => {
+      store.state = {
+        ...store.state as any,
+        ...(event.currentTarget as ElementWithEvent).events![event.type](event)
+      }
+      const node = resolveNode(h(view), store)
+      updateElement(container, store, node, currentNode)
+      currentNode = node
     }
-
-    const node = h(view, currentState)
-    updateElement(container, dispatch, node, currentNode)
-    currentNode = node
   }
 
-  updateElement(container, dispatch, currentNode)
+  let currentNode = resolveNode(h(view), store)
+
+  updateElement(container, store, currentNode)
 }

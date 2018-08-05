@@ -5,10 +5,17 @@ const { h, app } = vDom
 const state = { count: 0 }
 const setCount = (count) => ({ count })
 
-const view = (state) =>
+const Counter = (props) =>
+  (state) =>
+    <div>
+      <span>{state.count}</span>
+      <button onClick={() => setCount(state.count + props.by)}>+</button>
+    </div>
+
+const view = () =>
   <div>
-    <span>{state.count}</span>
-    <button onClick={() => setCount(state.count + 1)}>+</button>
+    <h1>Counter Sample</h1>
+    <Counter by={1} />
   </div>
 
 app(state, view, document.getElementById('root'))
