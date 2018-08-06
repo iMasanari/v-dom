@@ -18,4 +18,7 @@ const view = () =>
     <Counter by={1} />
   </div>
 
-app(state, view, document.getElementById('root'))
+app(state, view, document.getElementById('root'), (action, setState) => {
+  console.log(action)
+  setState((state) => ({ ...state, ...action }))
+})

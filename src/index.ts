@@ -183,20 +183,25 @@ interface Store<S> {
   state: S
 }
 
-export function app<S extends object>(state: S, view: () => VNode<S>, container: Element) {
-  let store: Store<S> = {
+export function app<State, ActionObject>(
+  state: State,
+  view: () => VNode,
+  container: Element,
+  middleware: (action: ActionObject, setState: (fn: (state: State) => State) => void) => void = (action, setState) => {
+    setState((state) => ({ ...state as any, ...action as any }))
+  }
+) {
+  let store: Store<State> = {
     state,
     dispatch: (event: Event) => {
-      store.state = {
-        ...store.state as any,
-        ...(event.currentTarget as ElementWithEvent).events![event.type](event)
-      }
+      const action = (event.currentTarget as ElementWithEvent).events![event.type](event)
+      middleware(action, setState)
       const node = resolveNode(h(view), store)
       updateElement(container, store, node, currentNode)
       currentNode = node
     }
   }
-
+  const setState = (fn: (state: State) => State) => { store.state = fn(store.state) }
   let currentNode = resolveNode(h(view), store)
 
   updateElement(container, store, currentNode)
