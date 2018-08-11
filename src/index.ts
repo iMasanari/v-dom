@@ -191,18 +191,23 @@ export function app<State, ActionObject>(
     setState((state) => ({ ...state as any, ...action as any }))
   }
 ) {
-  let store: Store<State> = {
+  const store: Store<State> = {
     state,
     dispatch: (event: Event) => {
       const action = (event.currentTarget as ElementWithEvent).events![event.type](event)
       middleware(action, setState)
-      const node = resolveNode(h(view), store)
-      updateElement(container, store, node, currentNode)
-      currentNode = node
     }
   }
-  const setState = (fn: (state: State) => State) => { store.state = fn(store.state) }
-  let currentNode = resolveNode(h(view), store)
+
+  const setState = (fn: (state: State) => State) => {
+    store.state = fn(store.state)
+
+    const node = resolveNode(view(), store)
+    updateElement(container, store, node, currentNode)
+    currentNode = node
+  }
+
+  let currentNode = resolveNode(view(), store)
 
   updateElement(container, store, currentNode)
 }
